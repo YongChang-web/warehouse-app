@@ -1,147 +1,159 @@
 import streamlit as st
 import pandas as pd
-from supabase import create_client, Client
+from supabase import create_client, StorageClient
 
-# =========读取密钥=========
-url: str = st.secrets["supabase_url"]
-key: str = st.secrets["supabase_anon_key"]
-supabase: Client = create_client(url, key)
+st.set_page_config(page_title="云端仓储管理系统", layout="wide")
 
-# ---------- 语言配置 ----------
-lang_dict = {
-    "zh":{
-        "title":"📦简易云端仓储管理系统",
-        "menu_import":"📥导入Excel商品表",
-        "menu_goods":"🏷️商品录入与查询",
-        "menu_customer":"👤买家信息登记",
-        "menu_report":"📊库存报表",
-        "lang_switch":"🌐切换语言",
-        "style":"款式",
-        "color":"颜色",
-        "price":"价格",
-        "stock":"库存数量",
-        "sold":"售出数量",
-        "imgpath":"图片路径",
-        "name":"客户姓名",
-        "phone":"联系电话",
-        "note":"备注",
-        "save":"💾保存",
-        "export":"📤导出报表",
-        "warning_no_data":"暂无数据，请先导入或录入商品！"
-    },
-    "en":{
-        "title":"📦 Simple Cloud Warehouse System",
-        "menu_import":"📥 Import Excel Goods",
-        "menu_goods":"🏷️ Goods Entry & Search",
-        "menu_customer":"👤 Customer Record",
-        "menu_report":"📊 Stock Report",
-        "lang_switch":"🌐 Switch Language",
-        "style":"Style",
-        "color":"Color",
-        "price":"Price",
-        "stock":"Stock Qty",
-        "sold":"Sold Qty",
-        "imgpath":"Image Path",
-        "name":"Customer Name",
-        "phone":"Phone",
-        "note":"Note",
-        "save":"💾 Save",
-        "export":"📤 Export Report",
-        "warning_no_data":"No data! Please import or add goods first."
-    }
-}
+# 读取密钥
+supabase_url = st.secrets["supabase_url"]
+supabase_anon_key = st.secrets["supabase_anon_key"]
+supabase = create_client(supabase_url, supabase_anon_key)
 
-# 初始化语言
-if 'language' not in st.session_state:
-    st.session_state.language = "zh"
+# =========登录状态管理=========
+if "login" not in st.session_state:
+    st.session_state.login = False
+    st.session_state.username = ""
 
-lang_opt = st.radio(lang_dict[st.session_state.language]["lang_switch"],["中文","English"])
-if lang_opt == "中文":
-    st.session_state.language = "zh"
-else:
-    st.session_state.language = "en"
-L = lang_dict[st.session_state.language]
+def login_page():
+    st.title("🔐系统登录")
+    username = st.text_input("账号")
+    password = st.text_input("密码", type="password")
+    if st.button("登录"):
+        res = supabase.table("users").select("*").eq("username", username).eq("password", password).execute()
+        if len(res.data) > 0:
+            st.session_state.login = True
+            st.session_state.username = username
+            st.rerun()
+        else:
+            st.error("账号或密码错误！")
 
-st.title(L["title"])
-menu = st.sidebar.selectbox("Menu",
-    [L["menu_import"],L["menu_goods"],L["menu_customer"],L["menu_report"]])
+if not st.session_state.login:
+    login_page()
+    st.stop()
 
-# 1.导入Excel
-if menu == L["menu_import"]:
-    st.subheader(L["menu_import"])
-    upfile = st.file_uploader("Upload Excel",type=["xlsx"])
-    if upfile is not None:
-        try:
-            df = pd.read_excel(upfile)
-            progress_bar = st.progress(0)
-            for i,row in df.iterrows():
-                data = {
-                    "style":str(row.get("style","")),
-                    "color":str(row.get("color","")),
-                    "price":float(row.get("price",0)),
-                    "stock":int(row.get("stock",0)),
-                    "sold":int(row.get("sold",0)),
-                    "imgpath":str(row.get("imgpath",""))
-                }
-                supabase.table("goods").insert(data).execute()
-                progress_bar.progress((i+1)/len(df))
-            st.success("✅全部导入云数据库成功！")
-        except Exception as e:
-            st.error(str(e))
+# =========主菜单========
+st.sidebar.info(f"👤 当前用户：{st.session_state.username}")
+menu = st.sidebar.selectbox("功能菜单",
+    ["📦查看库存","➕新增商品","📥批量导入Excel","✏️修改商品","🗑️删除商品","💰销售出库","📊销售台账","📤导出报表"])
+warn_line = st.sidebar.number_input("库存预警线", value=10, min_value=0)
 
-#2.商品录入
-if menu == L["menu_goods"]:
-    st.subheader(L["menu_goods"])
-    with st.form("goods_form"):
-        s = st.text_input(L["style"])
-        c = st.text_input(L["color"])
-        p = st.number_input(L["price"],0.0)
-        stk = st.number_input(L["stock"],0)
-        sl = st.number_input(L["sold"],0)
-        img = st.text_input(L["imgpath"])
-        sub = st.form_submit_button(L["save"])
-        if sub:
-            insert_data = {"style":s,"color":c,"price":p,"stock":stk,"sold":sl,"imgpath":img}
-            supabase.table("goods").insert(insert_data).execute()
-            st.success("✅已保存到云端！")
-    #读取展示
-    res = supabase.table("goods").select("*").execute()
-    df_goods = pd.DataFrame(res.data)
-    st.dataframe(df_goods)
-
-#3.买家登记
-if menu == L["menu_customer"]:
-    st.subheader(L["menu_customer"])
-    with st.form("cust_form"):
-        n = st.text_input(L["name"])
-        ph = st.text_input(L["phone"])
-        nt = st.text_input(L["note"])
-        subc = st.form_submit_button(L["save"])
-        if subc:
-            cust_data = {"name":n,"phone":ph,"note":nt}
-            supabase.table("customers").insert(cust_data).execute()
-            st.success("✅买家信息存入云端！")
-    res_c = supabase.table("customers").select("*").execute()
-    df_cust = pd.DataFrame(res_c.data)
-    st.dataframe(df_cust)
-
-#4.库存报表
-if menu == L["menu_report"]:
-    st.subheader(L["menu_report"])
+# 1.查看库存
+if menu == "📦查看库存":
+    st.subheader("📦商品库存清单")
     res = supabase.table("goods").select("*").execute()
     df = pd.DataFrame(res.data)
-    if len(df)>0:
-        df["Available"] = df["stock"] - df["sold"]
-        st.dataframe(df)
-        #下载
-        from io import BytesIO
-        output = BytesIO()
-        with pd.ExcelWriter(output,engine="openpyxl") as writer:
-            df.to_excel(writer,index=False,sheet_name="Stock")
-        output.seek(0)
-        st.download_button(L["export"],data=output,file_name="StockReport.xlsx")
+    if len(df) ==0:
+        st.info("暂无商品")
     else:
-        st.warning(L["warning_no_data"])
+        def warn_style(row):
+            if row["stock"] <= warn_line:
+                return ['background-color:#ffcccc']*len(row)
+            else:
+                return ['']*len(row)
+        st.dataframe(df.style.apply(warn_style,axis=1),use_container_width=True)
 
-st.markdown("---")
-st.caption("🌐云端协同仓储系统｜数据存储于Supabase")
+#2.新增商品
+elif menu == "➕新增商品":
+    st.subheader("➕新增商品入库")
+    with st.form("add_form"):
+        style = st.text_input("款式(style)")
+        color = st.text_input("颜色(color)")
+        price = st.number_input("单价(price)",0.0)
+        stock = st.number_input("库存(stock)",0)
+        sold = st.number_input("已售(sold)",0)
+        pic = st.file_uploader("上传商品图片",type=["jpg","png","jpeg"])
+        submit = st.form_submit_button("✅提交入库")
+        if submit:
+            img_url = ""
+            if pic is not None:
+                bucket_name="product-images"
+                file_path = f"{st.session_state.username}_{pic.name}"
+                supabase.storage.from_(bucket_name).upload(file_path, pic.getvalue())
+                img_url = f"{supabase_url}/storage/v1/object/public/{bucket_name}/{file_path}"
+            supabase.table("goods").insert({
+                "style":style,"color":color,"price":price,"stock":stock,"sold":sold,"imgpath":img_url
+            }).execute()
+            st.success("✅添加成功！")
+
+#3.批量导入
+elif menu == "📥批量导入Excel":
+    st.info("⚠️Excel表头必须小写英文：style,color,price,stock,sold,imgpath")
+    upfile = st.file_uploader("上传Excel",type=["xlsx"])
+    if upfile is not None:
+        df_upload = pd.read_excel(upfile)
+        need_cols = {"style","color","price","stock","sold","imgpath"}
+        if need_cols.issubset(df_upload.columns):
+            data_list = df_upload.to_dict("records")
+            supabase.table("goods").insert(data_list).execute()
+            st.success("✅批量导入完成！")
+        else:
+            st.error("❌表头不对！")
+
+#4.修改商品
+elif menu == "✏️修改商品":
+    st.subheader("✏️修改商品（填入ID）")
+    edit_id = st.number_input("商品ID",min_value=1,step=1)
+    res_one = supabase.table("goods").select("*").eq("id",edit_id).execute()
+    if len(res_one.data)>0:
+        d = res_one.data[0]
+        with st.form("edit_f"):
+            style = st.text_input("款式",value=d["style"])
+            color = st.text_input("颜色",value=d["color"])
+            price = st.number_input("单价",0.0,value=float(d["price"]))
+            stock = st.number_input("库存",0,value=d["stock"])
+            sold = st.number_input("已售",0,value=d["sold"])
+            submit_e = st.form_submit_button("💾保存修改")
+            if submit_e:
+                supabase.table("goods").update({
+                    "style":style,"color":color,"price":price,"stock":stock,"sold":sold
+                }).eq("id",edit_id).execute()
+                st.success("✅已更新！")
+    else:
+        st.warning("未找到该ID商品")
+
+#5.删除
+elif menu == "🗑️删除商品":
+    st.subheader("🗑️删除商品（谨慎！）")
+    del_id = st.number_input("要删除的商品ID",min_value=1,step=1)
+    if st.button("⚠️确认删除"):
+        supabase.table("goods").delete().eq("id",del_id).execute()
+        st.success("✅已删除！")
+
+#6.销售出库
+elif menu == "💰销售出库":
+    st.subheader("💰销售出库登记")
+    sel_id = st.number_input("商品ID",min_value=1,step=1)
+    r = supabase.table("goods").select("*").eq("id",sel_id).execute()
+    if len(r.data)>0:
+        item = r.data[0]
+        st.write(f"款式：{item['style']}｜颜色：{item['color']}｜当前库存：{item['stock']}")
+        sell_num = st.number_input("售出数量",min_value=1,max_value=item["stock"])
+        sell_p = st.number_input("售卖单价",0.0,value=float(item["price"]))
+        if st.button("✅确认售出"):
+            new_stock = item["stock"] - sell_num
+            new_sold = item["sold"] + sell_num
+            supabase.table("goods").update({"stock":new_stock,"sold":new_sold}).eq("id",sel_id).execute()
+            supabase.table("sales").insert({
+                "goods_id":sel_id,
+                "sell_num":sell_num,
+                "sell_price":sell_p,
+                "operator":st.session_state.username
+            }).execute()
+            st.success("✅出库成功，台账已自动记录！")
+    else:
+        st.info("请输入有效的商品ID")
+
+#7.销售台账
+elif menu == "📊销售台账":
+    st.subheader("📊销售记录台账")
+    s_res = supabase.table("sales").select("*").execute()
+    s_df = pd.DataFrame(s_res.data)
+    st.dataframe(s_df,use_container_width=True)
+
+#8.导出报表
+elif menu == "📤导出报表":
+    st.subheader("📤导出库存报表")
+    out = supabase.table("goods").select("*").execute()
+    df_out = pd.DataFrame(out.data)
+    csv = df_out.to_csv(index=False,encoding="utf-8-sig")
+    st.download_button("📥下载库存CSV",csv,"inventory.csv","text/csv")

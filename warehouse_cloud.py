@@ -4,35 +4,32 @@ from supabase import create_client
 
 st.set_page_config(page_title="云端仓储管理系统", layout="wide")
 
+# =========【这里可以自己改访问密码】=========
+ACCESS_PASSWORD = "123654"
+# ==========================================
+
 # 读取密钥
 supabase_url = st.secrets["supabase_url"]
 supabase_anon_key = st.secrets["supabase_anon_key"]
 supabase = create_client(supabase_url, supabase_anon_key)
 
-# =========登录状态管理=========
-if "login" not in st.session_state:
-    st.session_state.login = False
-    st.session_state.username = ""
+# =========简易单密码验证=========
+if "passed" not in st.session_state:
+    st.session_state.passed = False
 
-def login_page():
-    st.title("🔐系统登录")
-    username = st.text_input("账号")
-    password = st.text_input("密码", type="password")
-    if st.button("登录"):
-        res = supabase.table("users").select("*").eq("username", username).eq("password", password).execute()
-        if len(res.data) > 0:
-            st.session_state.login = True
-            st.session_state.username = username
+if not st.session_state.passed:
+    st.title("🔐仓储系统访问入口")
+    input_pw = st.text_input("请输入访问密码", type="password")
+    if st.button("进入系统"):
+        if input_pw == ACCESS_PASSWORD:
+            st.session_state.passed = True
             st.rerun()
         else:
-            st.error("账号或密码错误！")
-
-if not st.session_state.login:
-    login_page()
+            st.error("❌密码不正确！")
     st.stop()
 
 # =========主菜单========
-st.sidebar.info(f"👤 当前用户：{st.session_state.username}")
+st.sidebar.info("✅已通过密码验证")
 menu = st.sidebar.selectbox("功能菜单",
     ["📦查看库存","➕新增商品","📥批量导入Excel","✏️修改商品","🗑️删除商品","💰销售出库","📊销售台账","📤导出报表"])
 warn_line = st.sidebar.number_input("库存预警线", value=10, min_value=0)
@@ -67,7 +64,7 @@ elif menu == "➕新增商品":
             img_url = ""
             if pic is not None:
                 bucket_name="product-images"
-                file_path = f"{st.session_state.username}_{pic.name}"
+                file_path = f"sys_{pic.name}"
                 supabase.storage.from_(bucket_name).upload(file_path, pic.getvalue())
                 img_url = f"{supabase_url}/storage/v1/object/public/{bucket_name}/{file_path}"
             supabase.table("goods").insert({
@@ -137,7 +134,7 @@ elif menu == "💰销售出库":
                 "goods_id":sel_id,
                 "sell_num":sell_num,
                 "sell_price":sell_p,
-                "operator":st.session_state.username
+                "operator":"内部使用者"
             }).execute()
             st.success("✅出库成功，台账已自动记录！")
     else:

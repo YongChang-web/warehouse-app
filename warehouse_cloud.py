@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from supabase import create_client, StorageClient
+from supabase import create_client
 
 st.set_page_config(page_title="云端仓储管理系统", layout="wide")
 
